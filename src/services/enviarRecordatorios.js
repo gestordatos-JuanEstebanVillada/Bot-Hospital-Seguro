@@ -4,6 +4,13 @@ const { correosUsuarios } = require('../config/correosUsuarios');
 const { SQL_TAREAS_PLANEADAS } = require('../queries/tareasPlaneadas');
 const { crearTransporter } = require('../email/transporter');
 const { buildAsunto, buildHtmlCorreo } = require('../email/template');
+const {
+  resolverEscenarioEnvio,
+  parseFechaCompromiso,
+  hoyInicioDia,
+  ZONA_HORARIA,
+} = require('../utils/fechas');
+
 function normalizarUsuario(usuario) {
   if (usuario == null) return '';
   return String(usuario).trim().toLowerCase();
@@ -20,7 +27,8 @@ async function enviarRecordatoriosTareasPlaneadas() {
   let connection;
 
   try {
-    console.log('[bot] Iniciando consulta de tareas planeadas...');
+    const hoy = hoyInicioDia().format('YYYY-MM-DD');
+    console.log(`[bot] Iniciando consulta de tareas planeadas (fecha local ${ZONA_HORARIA}: ${hoy})...`);
     oracledb.outFormat = oracledb.OUT_FORMAT_OBJECT;
 
     connection = await oracledb.getConnection(getOracleConfig());
@@ -30,7 +38,7 @@ async function enviarRecordatoriosTareasPlaneadas() {
     console.log(`[bot] Registros obtenidos: ${filas.length}`);
 
     if (filas.length === 0) {
-      console.log('[bot] No hay tareas planeadas para notificar.');
+      console.log('[bot] No hay tareas planeadas en la consulta.');
       return;
     }
 
@@ -38,15 +46,37 @@ async function enviarRecordatoriosTareasPlaneadas() {
     const remitente = process.env.GMAIL_USER;
 
     let enviados = 0;
-    let omitidos = 0;
+    let omitidosSinCorreo = 0;
+    let omitidosPorFecha = 0;
+    let omitidosFechaInvalida = 0;
 
     for (const fila of filas) {
+      const fechaCompromisoRaw = obtenerCampo(fila, 'FECHA_COMPROMISO', 'fecha_compromiso');
+      if (fechaCompromisoRaw == null) {
+        omitidosFechaInvalida += 1;
+        console.log('[bot] Registro sin fecha_compromiso; omitido.');
+        continue;
+      }
+
+      const resolucion = resolverEscenarioEnvio(fechaCompromisoRaw);
+
+      if (!resolucion) {
+        if (!parseFechaCompromiso(fechaCompromisoRaw)) {
+          omitidosFechaInvalida += 1;
+          console.log('[bot] fecha_compromiso no parseable; omitido.');
+        } else {
+          omitidosPorFecha += 1;
+        }
+        continue;
+      }
+
+      const { escenario } = resolucion;
       const usuarioRaw = obtenerCampo(fila, 'USUARIO', 'usuario');
       const usuarioKey = normalizarUsuario(usuarioRaw);
       const destino = correosUsuarios[usuarioKey];
 
       if (!destino) {
-        omitidos += 1;
+        omitidosSinCorreo += 1;
         console.log(
           `[bot] Sin correo configurado para usuario "${usuarioRaw ?? '(vacío)'}". Registro omitido.`
         );
@@ -54,8 +84,8 @@ async function enviarRecordatoriosTareasPlaneadas() {
       }
 
       const numEvento = obtenerCampo(fila, 'NUM_EVENTO', 'num_evento');
-      const asunto = buildAsunto(numEvento);
-      const html = buildHtmlCorreo(fila);
+      const asunto = buildAsunto(numEvento, escenario);
+      const html = buildHtmlCorreo(fila, escenario);
 
       try {
         const info = await transporter.sendMail({
@@ -67,17 +97,19 @@ async function enviarRecordatoriosTareasPlaneadas() {
 
         enviados += 1;
         console.log(
-          `[bot] Correo enviado a ${destino} (usuario: ${usuarioKey}, evento #${numEvento}, messageId: ${info.messageId})`
+          `[bot] Correo enviado (${escenario}) a ${destino} (usuario: ${usuarioKey}, evento #${numEvento}, messageId: ${info.messageId})`
         );
       } catch (errEnvio) {
         console.error(
-          `[bot] Error al enviar correo a ${destino} (evento #${numEvento}):`,
+          `[bot] Error al enviar correo a ${destino} (evento #${numEvento}, ${escenario}):`,
           errEnvio.message
         );
       }
     }
 
-    console.log(`[bot] Proceso finalizado. Enviados: ${enviados}, omitidos: ${omitidos}.`);
+    console.log(
+      `[bot] Proceso finalizado. Enviados: ${enviados}, omitidos por fecha/escenario: ${omitidosPorFecha}, sin correo: ${omitidosSinCorreo}, fecha inválida: ${omitidosFechaInvalida}.`
+    );
   } catch (error) {
     console.error('[bot] Error en el proceso de recordatorios:', error);
     throw error;
