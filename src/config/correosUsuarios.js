@@ -1,5 +1,5 @@
 const correosUsuarios = {
-  tmoreno: 'enfermera.calidad@laliga.org.co',
+  tmoreno: 'gestor.datos@laliga.org.co',
 };
 
 module.exports = { correosUsuarios };

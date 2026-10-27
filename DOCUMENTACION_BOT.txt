@@ -1,0 +1,491 @@
+================================================================================
+  BOT HOSPITAL SEGURO — Documentación completa (copiar / pegar)
+  Recordatorios automáticos · Oracle · Gmail OAuth2 · Panel admin · Jest
+  Actualizado: proyecto con historial, atraso crónico y pruebas seguras
+================================================================================
+
+
+ÍNDICE
+------
+  1.  ¿Qué hace este bot en una frase?
+  2.  Árbol de archivos y para qué sirve cada uno
+  3.  Variables de entorno (.env)
+  4.  Dependencias npm
+  5.  Comandos de terminal (CÓMO ENVIAR CORREOS)
+  6.  Flujo completo paso a paso (producción)
+  7.  Consulta SQL y tablas Oracle
+  8.  Reglas de fechas y escenarios de correo
+  9.  Mapa usuario → correo
+ 10.  Correos HTML y color institucional
+ 11.  Gmail OAuth 2.0
+ 12.  Historial de envíos (persistencia)
+ 13.  Modo prueba seguro (CORREO_PRUEBA)
+ 14.  Panel de administración web
+ 15.  Pruebas unitarias (Jest)
+ 16.  Cron y arranque del proceso
+ 17.  Pool de conexiones Oracle
+ 18.  Puesta en producción y solución de problemas
+
+
+================================================================================
+1. ¿QUÉ HACE ESTE BOT EN UNA FRASE?
+================================================================================
+
+Todos los días (o bajo demanda) consulta en Oracle las tareas en estado
+Planeado (PL), decide si HOY corresponde enviar un recordatorio según reglas
+de calendario e historial, envía correos HTML por Gmail OAuth2 al responsable
+mapeado en correosUsuarios.js, y guarda cada envío exitoso en la tabla
+"HS-historial_correos_bot". Además expone un panel web para ver el historial
+y hacer login contra intranet_usuarios.
+
+
+================================================================================
+2. ÁRBOL DE ARCHIVOS Y PARA QUÉ SIRVE CADA UNO
+================================================================================
+
+bot-hospital-seguro/
+│
+├── .env                          Credenciales reales (NO subir a git)
+├── .env.example                  Plantilla de variables
+├── .gitignore                    Ignora node_modules, .env, logs
+├── package.json                  Scripts npm y dependencias
+├── package-lock.json
+├── jest.config.js                Configuración de Jest
+├── query.txt                     Referencia de la consulta SQL principal
+├── DOCUMENTACION_BOT.txt         Este archivo
+│
+├── sql/
+│   └── HS-historial_correos_bot.sql   Script CREATE TABLE + índices + item
+│
+├── tests/
+│   ├── fechas.test.js            Pruebas de resolverEscenarioEnvio (dayjs)
+│   └── destinoCorreo.test.js     Pruebas de CORREO_PRUEBA obligatorio
+│
+└── src/
+    ├── index.js                  ARRANQUE: pool Oracle + cron 8AM + Express admin
+    │
+    ├── scripts/
+    │   └── testEnvio.js          Modo prueba de envío (CORREO_PRUEBA obligatorio)
+    │
+    ├── db/
+    │   └── oraclePool.js         Pool de conexiones (cron + web + jobs)
+    │
+    ├── config/
+    │   ├── oracle.js             Lee env SCSE_DB_* → connectString
+    │   ├── correosUsuarios.js    Diccionario usuario BD → email destino
+    │   └── brand.js              Color #BC145F (La Liga)
+    │
+    ├── queries/
+    │   └── tareasPlaneadas.js    SQL principal + LEFT JOIN historial (ultima_fecha_envio)
+    │
+    ├── services/
+    │   ├── enviarRecordatorios.js   ORQUESTADOR: consulta, fechas, envío, historial
+    │   ├── historialCorreos.js      INSERT y SELECT en HS-historial_correos_bot
+    │   └── intranetAuth.js          Login panel vs tabla intranet_usuarios
+    │
+    ├── email/
+    │   ├── transporter.js        Nodemailer + googleapis OAuth2 (refresh token)
+    │   └── template.js           Asuntos y HTML por escenario
+    │
+    ├── utils/
+    │   ├── fechas.js             dayjs America/Bogota · resolverEscenarioEnvio
+    │   ├── estado.js             Código PL → texto "Planeado" en correo
+    │   └── destinoCorreo.js        En modo prueba: SOLO CORREO_PRUEBA
+    │
+    └── admin/
+        ├── app.js                Express: login, dashboard, sesiones
+        ├── middleware/
+        │   └── requireAuth.js    Protege /admin/dashboard
+        ├── utils/
+        │   └── html.js           Escapar HTML y formatear fechas en vistas
+        └── views/
+            ├── loginPage.js      HTML + Tailwind CDN (login)
+            └── dashboardPage.js  Tabla historial envíos (#BC145F)
+
+
+================================================================================
+3. VARIABLES DE ENTORNO (.env)
+================================================================================
+
+Copiar desde .env.example y completar:
+
+  --- Oracle (SCSE) ---
+  SCSE_DB_USER=BDLIGA
+  SCSE_DB_PASSWD=********
+  SCSE_DB_IP=160.1.1.99
+  SCSE_DB_PORT=1521
+  SCSE_DB_DATABASE=scse
+
+  --- Gmail OAuth2 ---
+  GMAIL_USER=correo.remitente@gmail.com
+  GMAIL_CLIENT_ID=...
+  GMAIL_CLIENT_SECRET=...
+  GMAIL_REFRESH_TOKEN=...
+
+  --- Modo prueba (OBLIGATORIO para test-emails*) ---
+  CORREO_PRUEBA=gestor.datos@laliga.org.co
+
+  --- Panel administración ---
+  ADMIN_PORT=3000
+  SESSION_SECRET=secreto_largo_y_aleatorio_minimo_32_caracteres
+
+  --- Opcional producción con HTTPS ---
+  NODE_ENV=production
+
+
+================================================================================
+4. DEPENDENCIAS NPM
+================================================================================
+
+Producción:
+  oracledb       Conexión Oracle
+  nodemailer     Envío de correos
+  googleapis     OAuth2 para Gmail
+  node-cron      Programación diaria 8:00 AM
+  dotenv         Variables .env
+  dayjs          Cálculo de fechas y meses (America/Bogota)
+  express        Servidor panel admin
+  express-session Sesiones login admin
+
+Desarrollo:
+  jest           Pruebas unitarias
+
+
+================================================================================
+5. COMANDOS DE TERMINAL (CÓMO ENVIAR CORREOS)
+================================================================================
+
+Abrir PowerShell en la carpeta del proyecto:
+
+  cd "c:\Users\Liga Cancer\Desktop\bot-hospital-seguro"
+
+Instalar (primera vez o tras cambiar package.json):
+
+  npm install
+
+──────────────────────────────────────────────────────────────────────────────
+A) PRUEBAS UNITARIAS (NO envían correos)
+──────────────────────────────────────────────────────────────────────────────
+  npm test
+
+──────────────────────────────────────────────────────────────────────────────
+B) ENVIAR CORREOS DE PRUEBA (seguro — solo CORREO_PRUEBA)
+──────────────────────────────────────────────────────────────────────────────
+Requisito: CORREO_PRUEBA definido en .env
+
+  npm run test-emails:una-fila
+
+  · Ignora reglas de fecha.
+  · Envía 3 plantillas (5 días, mañana, 15 días) con la PRIMERA fila Oracle.
+  · Destino SIEMPRE = CORREO_PRUEBA (ignora correosUsuarios).
+  · Asunto con prefijo [PRUEBA].
+  · Registra en historial si la tabla existe.
+
+Para probar TODAS las filas (muchos correos):
+
+  npm run test-emails
+
+──────────────────────────────────────────────────────────────────────────────
+C) ENVÍO REAL SEGÚN REGLAS DE FECHA (producción manual)
+──────────────────────────────────────────────────────────────────────────────
+  npm run run-once
+
+  · Una sola ejecución y termina.
+  · Usa correosUsuarios.js para destinatarios.
+  · Solo envía si HOY cumple algún escenario (ver sección 8).
+  · Guarda historial tras cada envío exitoso.
+
+──────────────────────────────────────────────────────────────────────────────
+D) BOT AUTOMÁTICO + PANEL WEB
+──────────────────────────────────────────────────────────────────────────────
+  npm start
+
+  · Cron todos los días 8:00 AM (America/Bogota).
+  · Panel: http://localhost:3000/admin/login  (o ADMIN_PORT)
+  · Proceso queda corriendo (no es un “envío inmediato”; espera las 8AM).
+
+Flags opcionales en index.js:
+  node src/index.js --once       Igual que npm run run-once
+  node src/index.js --no-cron    Solo panel web
+  node src/index.js --no-admin   Solo cron, sin panel
+
+
+================================================================================
+6. FLUJO COMPLETO PASO A PASO (PRODUCCIÓN)
+================================================================================
+
+Archivo principal del job: src/services/enviarRecordatorios.js
+
+  1. initOraclePool() ya corrió en index.js (o testEnvio.js).
+  2. getPool().getConnection() — una conexión por ejecución del job.
+  3. Ejecuta SQL_TAREAS_PLANEADAS (src/queries/tareasPlaneadas.js).
+     Trae filas con ultima_fecha_envio del historial (LEFT JOIN).
+  4. crearTransporter() — OAuth2 Gmail (src/email/transporter.js).
+  5. Por cada fila:
+       a) usuario → correosUsuarios (minúsculas).
+       b) resolverDestino: producción usa mapa; prueba usa CORREO_PRUEBA.
+       c) resolverEscenarioEnvio(fecha_compromiso, ultima_fecha_envio)
+          (src/utils/fechas.js).
+       d) Si escenario = null → omitir fila ese día.
+       e) buildAsunto + buildHtmlCorreo (src/email/template.js).
+       f) transporter.sendMail().
+       g) registrarEnvioExitoso → tabla HS-historial_correos_bot.
+  6. connection.close() — devuelve conexión al pool.
+
+
+================================================================================
+7. CONSULTA SQL Y TABLAS ORACLE
+================================================================================
+
+Archivo: src/queries/tareasPlaneadas.js
+
+Campos devueltos:
+  historia, identificacion, paciente, num_evento, item, tarea,
+  fecha_compromiso, estado (PL), usuario (eveplares),
+  ultima_fecha_envio (MAX del historial por num_evento + item)
+
+Tablas hospital:
+  hsregeve, hiepiina, abpac, hsevepla, siide
+  Filtros: regeveest = 'A', eveplaest = 'PL'
+
+Tabla historial (bot):
+  "HS-historial_correos_bot"
+  Script: sql/HS-historial_correos_bot.sql
+
+  Columnas: id, num_evento, item, paciente, destinatario, fecha_envio,
+            escenario, message_id, modo_prueba (S/N)
+
+  Si la tabla ya existía sin item:
+    ALTER TABLE "HS-historial_correos_bot" ADD item VARCHAR2(50);
+
+Tabla login panel:
+  intranet_usuarios (ID, USUARIO, CONTRASENA)
+  Validación: src/services/intranetAuth.js
+
+
+================================================================================
+8. REGLAS DE FECHAS Y ESCENARIOS DE CORREO
+================================================================================
+
+Archivo lógica: src/utils/fechas.js
+Función: resolverEscenarioEnvio(fechaCompromiso, ultimaFechaEnvio)
+Zona: America/Bogota, comparación por día (sin hora).
+
+─── A) Tarea NO atrasada crónicamente ───
+    (aún no pasó 1 mes calendario completo desde vencimiento)
+
+    | Escenario              | Condición                          |
+    |------------------------|------------------------------------|
+    | CINCO_DIAS_ANTES       | Faltan exactamente 5 días          |
+    | UN_DIA_ANTES           | Falta exactamente 1 día (mañana)   |
+    | QUINCE_DIAS_DESPUES    | Pasaron exactamente 15 días        |
+    | (ninguno)              | Cualquier otro día → no envía      |
+
+─── B) Tarea atrasada crónicamente ───
+    (vencida ≥ 1 mes calendario: hoy >= fecha_compromiso + 1 mes)
+
+    | Escenario                      | Condición                           |
+    |--------------------------------|-------------------------------------|
+    | RECORDATORIO_INICIAL_ATRASADO  | ultima_fecha_envio NULL → envía HOY |
+    |                                | (una sola vez “de choque”)          |
+    | RECORDATORIO_MENSUAL_VENCIDO     | ultima_fecha_envio existe Y         |
+    |                                | hoy = ultima_fecha_envio + 1 mes    |
+    | (ninguno)                      | Entre medias → no envía ese día     |
+
+    El mensual recurrente NO se calcula desde fecha_compromiso original,
+    sino desde la última fecha registrada en el historial.
+
+Asuntos (template.js):
+  · CINCO_DIAS_ANTES:     ¡Aviso! Tarea por vencer en 5 días - Evento #...
+  · UN_DIA_ANTES:         ¡Urgente! Tarea vence mañana - Evento #...
+  · QUINCE_DIAS_DESPUES:  ¡Alerta! Tarea vencida hace 15 días - Evento #...
+  · INICIAL_ATRASADO:     ¡Aviso Urgente! Tarea con atraso acumulado crítico...
+  · MENSUAL_VENCIDO:      Recordatorio Mensual: Tarea aún sin gestionar...
+
+Estado en correo: PL → "Planeado" (src/utils/estado.js)
+
+
+================================================================================
+9. MAPA USUARIO → CORREO
+================================================================================
+
+Archivo: src/config/correosUsuarios.js
+
+  const correosUsuarios = {
+    tmoreno: 'gestor.datos@laliga.org.co',
+  };
+
+La clave debe coincidir con el campo USUARIO de la consulta (minúsculas).
+Solo se usa en PRODUCCIÓN (run-once, cron). NO en test-emails*.
+
+
+================================================================================
+10. CORREOS HTML Y COLOR INSTITUCIONAL
+================================================================================
+
+Archivo: src/email/template.js
+Color: src/config/brand.js → #BC145F
+Formato: HTML con lista (historia, paciente, evento, ítem, tarea, fecha, estado).
+Sin logo embebido (diseño rosado La Liga).
+
+
+================================================================================
+11. GMAIL OAUTH 2.0
+================================================================================
+
+Archivo: src/email/transporter.js
+
+  1. google.auth.OAuth2 con CLIENT_ID y CLIENT_SECRET.
+  2. refresh_token desde GMAIL_REFRESH_TOKEN.
+  3. getAccessToken() antes de enviar.
+  4. nodemailer createTransport auth type OAuth2.
+
+
+================================================================================
+12. HISTORIAL DE ENVÍOS (PERSISTENCIA)
+================================================================================
+
+Archivo: src/services/historialCorreos.js
+
+  · INSERT tras cada sendMail exitoso (enviarRecordatorios.js → guardarHistorial).
+  · autoCommit: true.
+  · modo_prueba 'S' si el envío fue desde test-emails.
+  · escenario guardado como texto (ej. RECORDATORIO_INICIAL_ATRASADO).
+
+El JOIN en tareasPlaneadas usa num_evento + item para calcular ultima_fecha_envio.
+
+
+================================================================================
+13. MODO PRUEBA SEGURO (CORREO_PRUEBA)
+================================================================================
+
+Archivos:
+  src/utils/destinoCorreo.js   — obtenerDestinoModoPrueba() obligatorio
+  src/scripts/testEnvio.js     — aborta si falta CORREO_PRUEBA
+
+Reglas:
+  · test-emails y test-emails:una-fila SIEMPRE envían a CORREO_PRUEBA.
+  · Nunca usan correosUsuarios para el campo "to".
+  · Prefijo [PRUEBA] en asunto.
+  · Ignoran reglas de fecha (envían 3 plantillas fijas por fila).
+
+Para validar lógica de fechas sin enviar correos: npm test
+
+
+================================================================================
+14. PANEL DE ADMINISTRACIÓN WEB
+================================================================================
+
+Archivo servidor: src/admin/app.js
+Integración: src/index.js llama iniciarServidorAdmin() junto al cron.
+
+Rutas:
+  GET  /admin/login        Formulario (loginPage.js, Tailwind CDN)
+  POST /admin/login        Valida intranet_usuarios
+  GET  /admin/dashboard    Historial (requireAuth.js, dashboardPage.js)
+  POST /admin/logout
+
+Sesión: express-session, cookie httpOnly, SESSION_SECRET en .env.
+
+Consulta historial: listarHistorialEnvios — últimos 500, fecha DESC.
+
+URL típica: http://localhost:3000/admin/login
+
+
+================================================================================
+15. PRUEBAS UNITARIAS (JEST)
+================================================================================
+
+Config: jest.config.js
+Script: npm test
+
+tests/fechas.test.js
+  · HOY_SIMULADO = 2025-06-20 (America/Bogota).
+  · Escenarios 5 / 1 / 15 días.
+  · Atraso crónico inicial y mensual desde ultima_fecha_envio.
+  · Meses de 28–31 días (ej. 31 ene → 29 feb bisiesto).
+
+tests/destinoCorreo.test.js
+  · Modo prueba exige CORREO_PRUEBA.
+  · Ignora correosUsuarios en prueba.
+
+
+================================================================================
+16. CRON Y ARRANQUE DEL PROCESO
+================================================================================
+
+Archivo: src/index.js
+
+  · Expresión: 0 8 * * *  → 8:00 AM diario.
+  · timezone: America/Bogota.
+  · initOraclePool() al inicio.
+  · SIGINT/SIGTERM → closeOraclePool().
+
+npm start = cron + panel admin (por defecto).
+npm run run-once = un job sin dejar cron ni web (según flags).
+
+
+================================================================================
+17. POOL DE CONEXIONES ORACLE
+================================================================================
+
+Archivo: src/db/oraclePool.js
+
+  · createPool usando getOracleConfig() de src/config/oracle.js.
+  · poolMin 1, poolMax 10.
+  · withConnection(fn) para rutas web (abre/cierra por request).
+  · Job del bot: getConnection() + close() en finally.
+
+Evita agotar conexiones entre cron y Express simultáneos.
+
+
+================================================================================
+18. PUESTA EN PRODUCCIÓN Y SOLUCIÓN DE PROBLEMAS
+================================================================================
+
+Checklist:
+  [ ] .env completo (Oracle, Gmail, SESSION_SECRET)
+  [ ] Tabla "HS-historial_correos_bot" creada (+ columna item si aplica)
+  [ ] correosUsuarios.js actualizado
+  [ ] npm test en verde
+  [ ] npm run test-emails:una-fila → llega a CORREO_PRUEBA
+  [ ] npm start o servicio Windows/PM2 para cron + panel
+
+Problemas frecuentes:
+
+  "No envía con run-once"
+    → Normal si ninguna fila cumple escenario HOY. Ver sección 8.
+
+  "Sin correo configurado"
+    → Agregar usuario en correosUsuarios.js.
+
+  "CORREO_PRUEBA obligatorio"
+    → Definir en .env antes de test-emails.
+
+  Error OAuth invalid_grant
+    → Renovar GMAIL_REFRESH_TOKEN.
+
+  Error Oracle ORA-00942
+    → Crear tabla HS-historial_correos_bot o agregar columna item.
+
+  Error login admin
+    → Verificar intranet_usuarios y SESSION_SECRET.
+
+  Correos a spam
+    → Cuenta institucional, SPF/DKIM del dominio.
+
+
+================================================================================
+RESUMEN RÁPIDO DE COMANDOS
+================================================================================
+
+  npm install
+  npm test                          → pruebas, sin correos
+  npm run test-emails:una-fila      → 3 correos prueba a CORREO_PRUEBA
+  npm run run-once                  → envío real si las fechas coinciden hoy
+  npm start                         → cron 8AM + panel http://localhost:3000
+
+
+================================================================================
+FIN — bot-hospital-seguro / DOCUMENTACION_BOT.txt
+================================================================================

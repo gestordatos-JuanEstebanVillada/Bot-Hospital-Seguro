@@ -8,12 +8,23 @@ SELECT
     obs.eveplades AS tarea,
     obs.eveplafec AS fecha_compromiso,
     obs.eveplaest AS estado,
-    obs.eveplares AS usuario
+    obs.eveplares AS usuario,
+    hist.ultima_fecha_envio
 FROM hsregeve reg
 JOIN hiepiina epi ON reg.regeveepi = epi.epiinaepi
 JOIN abpac pac ON epi.epiinahis = pac.pachis
 JOIN hsevepla obs ON reg.regevesec = obs.eveplasec
 JOIN siide usu ON reg.regeveusu = usu.idecod
+LEFT JOIN (
+    SELECT
+        num_evento,
+        item,
+        MAX(fecha_envio) AS ultima_fecha_envio
+    FROM "HS-historial_correos_bot"
+    GROUP BY num_evento, item
+) hist
+    ON hist.num_evento = TO_CHAR(obs.eveplasec)
+   AND NVL(hist.item, '#') = NVL(TO_CHAR(obs.eveplaite), '#')
 WHERE reg.regeveest = 'A'
   AND obs.eveplaest = 'PL'
 `;

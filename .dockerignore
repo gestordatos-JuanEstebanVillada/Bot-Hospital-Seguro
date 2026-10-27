@@ -1,0 +1,40 @@
+# Dependencias (se instalan en build)
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# Secretos y entorno local (Portainer inyecta .env en runtime)
+.env
+.env.*
+!.env.example
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Logs y temporales
+*.log
+logs/
+tmp/
+temp/
+
+# Tests y desarrollo (no necesarios en imagen de producción)
+tests/
+coverage/
+jest.config.js
+
+# IDE / OS
+.vscode/
+.idea/
+.cursor/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Documentación opcional (reduce tamaño)
+DOCUMENTACION_BOT.txt
+query.txt
+
+# Assets no usados en runtime
+assets/

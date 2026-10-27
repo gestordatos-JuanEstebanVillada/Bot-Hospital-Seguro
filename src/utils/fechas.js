@@ -16,7 +16,7 @@ function hoyInicioDia() {
 }
 
 /**
- * Normaliza fecha_compromiso de Oracle a inicio de día en America/Bogota.
+ * Normaliza fechas de Oracle (DATE/TIMESTAMP/string) a inicio de día en America/Bogota.
  */
 function parseFechaCompromiso(valor) {
   if (valor == null || valor === '') return null;
@@ -36,6 +36,9 @@ function parseFechaCompromiso(valor) {
   if (!parsed.isValid()) {
     parsed = dayjs.tz(soloFecha, 'DD/MM/YYYY', ZONA_HORARIA);
   }
+  if (!parsed.isValid()) {
+    parsed = dayjs.tz(texto, ZONA_HORARIA);
+  }
   if (!parsed.isValid()) return null;
   return parsed.startOf('day');
 }
@@ -44,25 +47,69 @@ const ESCENARIO = {
   CINCO_DIAS_ANTES: 'CINCO_DIAS_ANTES',
   UN_DIA_ANTES: 'UN_DIA_ANTES',
   QUINCE_DIAS_DESPUES: 'QUINCE_DIAS_DESPUES',
+  RECORDATORIO_INICIAL_ATRASADO: 'RECORDATORIO_INICIAL_ATRASADO',
+  RECORDATORIO_MENSUAL_VENCIDO: 'RECORDATORIO_MENSUAL_VENCIDO',
 };
 
-/**
- * Días desde hoy hasta compromiso (positivo = compromiso en el futuro).
- */
 function diasHastaCompromiso(fechaCompromisoNormalizada) {
   return fechaCompromisoNormalizada.diff(hoyInicioDia(), 'day');
 }
 
-/**
- * Días transcurridos desde compromiso hasta hoy (positivo = ya venció).
- */
 function diasDesdeCompromiso(fechaCompromisoNormalizada) {
   return hoyInicioDia().diff(fechaCompromisoNormalizada, 'day');
 }
 
-function resolverEscenarioEnvio(fechaCompromisoRaw) {
+/**
+ * Tarea con al menos 1 mes calendario de vencida (atraso crónico).
+ */
+function tareaAtrasadaCronicamente(fechaCompromisoNormalizada) {
+  const hoy = hoyInicioDia();
+  if (!fechaCompromisoNormalizada.isBefore(hoy, 'day')) {
+    return false;
+  }
+  const unMesDespuesDelVencimiento = fechaCompromisoNormalizada.add(1, 'month');
+  return !hoy.isBefore(unMesDespuesDelVencimiento, 'day');
+}
+
+/**
+ * Hoy coincide con ultima_fecha_envio + 1 mes (dayjs ajusta meses de 28–31 días).
+ */
+function esDiaRecordatorioMensualDesdeUltimoEnvio(ultimaFechaEnvioNormalizada) {
+  const hoy = hoyInicioDia();
+  const proximoRecordatorio = ultimaFechaEnvioNormalizada.add(1, 'month');
+  return hoy.isSame(proximoRecordatorio, 'day');
+}
+
+function mesesAtrasoDesdeCompromiso(fechaCompromisoNormalizada) {
+  return Math.max(1, hoyInicioDia().diff(fechaCompromisoNormalizada, 'month'));
+}
+
+function resolverEscenarioEnvio(fechaCompromisoRaw, ultimaFechaEnvioRaw = null) {
   const compromiso = parseFechaCompromiso(fechaCompromisoRaw);
   if (!compromiso) return null;
+
+  const ultimaEnvio = parseFechaCompromiso(ultimaFechaEnvioRaw);
+  const atrasoCronico = tareaAtrasadaCronicamente(compromiso);
+
+  if (atrasoCronico) {
+    if (!ultimaEnvio) {
+      return {
+        escenario: ESCENARIO.RECORDATORIO_INICIAL_ATRASADO,
+        compromiso,
+        mesesAtraso: mesesAtrasoDesdeCompromiso(compromiso),
+      };
+    }
+
+    if (esDiaRecordatorioMensualDesdeUltimoEnvio(ultimaEnvio)) {
+      return {
+        escenario: ESCENARIO.RECORDATORIO_MENSUAL_VENCIDO,
+        compromiso,
+        ultimaFechaEnvio: ultimaEnvio,
+      };
+    }
+
+    return null;
+  }
 
   const hasta = diasHastaCompromiso(compromiso);
   if (hasta === 5) return { escenario: ESCENARIO.CINCO_DIAS_ANTES, compromiso };
@@ -83,6 +130,8 @@ module.exports = {
   ESCENARIO,
   hoyInicioDia,
   parseFechaCompromiso,
+  tareaAtrasadaCronicamente,
+  esDiaRecordatorioMensualDesdeUltimoEnvio,
   resolverEscenarioEnvio,
   formatearFechaCompromiso,
 };

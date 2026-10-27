@@ -5,7 +5,10 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "run-once": "node src/index.js --once"
+    "run-once": "node src/index.js --once",
+    "test-emails": "node src/scripts/testEnvio.js",
+    "test-emails:una-fila": "node src/scripts/testEnvio.js --una-fila",
+    "test": "jest"
   },
   "engines": {
     "node": ">=18"
@@ -13,9 +16,14 @@
   "dependencies": {
     "dayjs": "^1.11.13",
     "dotenv": "^16.4.5",
+    "express": "^4.21.2",
+    "express-session": "^1.18.1",
     "googleapis": "^144.0.0",
     "node-cron": "^3.0.3",
     "nodemailer": "^6.9.16",
     "oracledb": "^6.7.0"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
   }
 }

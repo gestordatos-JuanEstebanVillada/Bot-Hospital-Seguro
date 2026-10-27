@@ -1,5 +1,7 @@
 require('dotenv').config();
 const cron = require('node-cron');
+const { initOraclePool, closeOraclePool } = require('./db/oraclePool');
+const { iniciarServidorAdmin } = require('./admin/app');
 const { enviarRecordatoriosTareasPlaneadas } = require('./services/enviarRecordatorios');
 
 const CRON_DIARIO_8AM = '0 8 * * *';
@@ -27,10 +29,39 @@ function iniciarProgramacion() {
   );
 }
 
-const ejecutarUnaVez = process.argv.includes('--once');
-
-if (ejecutarUnaVez) {
-  ejecutarJob().then(() => process.exit(0));
-} else {
-  iniciarProgramacion();
+async function apagadoLimpio() {
+  console.log('[app] Cerrando pool Oracle...');
+  await closeOraclePool();
+  process.exit(0);
 }
+
+async function main() {
+  const ejecutarUnaVez = process.argv.includes('--once');
+  const sinCron = process.argv.includes('--no-cron');
+  const sinAdmin = process.argv.includes('--no-admin');
+
+  await initOraclePool();
+
+  if (ejecutarUnaVez) {
+    await ejecutarJob();
+    await closeOraclePool();
+    process.exit(0);
+  }
+
+  if (!sinCron) {
+    iniciarProgramacion();
+  }
+
+  if (!sinAdmin) {
+    iniciarServidorAdmin();
+  }
+
+  process.on('SIGINT', apagadoLimpio);
+  process.on('SIGTERM', apagadoLimpio);
+}
+
+main().catch(async (err) => {
+  console.error('[app] Error fatal al iniciar:', err);
+  await closeOraclePool();
+  process.exit(1);
+});
