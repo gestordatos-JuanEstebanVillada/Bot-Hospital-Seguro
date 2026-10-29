@@ -126,7 +126,7 @@ Copiar desde .env.example y completar:
   CORREO_PRUEBA=gestor.datos@laliga.org.co
 
   --- Panel administración ---
-  ADMIN_PORT=3000
+  ADMIN_PORT=2134
   SESSION_SECRET=secreto_largo_y_aleatorio_minimo_32_caracteres
 
   --- Opcional producción con HTTPS ---
@@ -201,7 +201,7 @@ D) BOT AUTOMÁTICO + PANEL WEB
   npm start
 
   · Cron todos los días 8:00 AM (America/Bogota).
-  · Panel: http://localhost:3000/admin/login  (o ADMIN_PORT)
+  · Panel: http://localhost:2134/admin/login  (o ADMIN_PORT)
   · Proceso queda corriendo (no es un “envío inmediato”; espera las 8AM).
 
 Flags opcionales en index.js:
@@ -389,7 +389,7 @@ Sesión: express-session, cookie httpOnly, SESSION_SECRET en .env.
 
 Consulta historial: listarHistorialEnvios — últimos 500, fecha DESC.
 
-URL típica: http://localhost:3000/admin/login
+URL típica: http://localhost:2134/admin/login
 
 
 ================================================================================
@@ -483,7 +483,7 @@ RESUMEN RÁPIDO DE COMANDOS
   npm test                          → pruebas, sin correos
   npm run test-emails:una-fila      → 3 correos prueba a CORREO_PRUEBA
   npm run run-once                  → envío real si las fechas coinciden hoy
-  npm start                         → cron 8AM + panel http://localhost:3000
+  npm start                         → cron 8AM + panel http://localhost:2134
 
 
 ================================================================================

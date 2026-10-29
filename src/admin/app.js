@@ -95,7 +95,7 @@ function crearAppAdmin() {
 
 function iniciarServidorAdmin() {
   const app = crearAppAdmin();
-  const port = Number(process.env.ADMIN_PORT || 3000);
+  const port = Number(process.env.ADMIN_PORT || 2134);
 
   app.listen(port, () => {
     console.log(`[admin] Panel web en http://localhost:${port}/admin/login`);

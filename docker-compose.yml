@@ -6,7 +6,7 @@ services:
     container_name: bot-hospital-seguro
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "2134:2134"
     env_file:
       - .env
     environment:

@@ -21,7 +21,7 @@ RUN npm ci --omit=dev && npm cache clean --force
 # Código de la aplicación
 COPY . .
 
-EXPOSE 3000
+EXPOSE 2134
 
 USER node
 
