@@ -28,11 +28,18 @@ function createOAuth2Client() {
 
 async function obtenerAccessToken() {
   const oauth2Client = createOAuth2Client();
-  const { token } = await oauth2Client.getAccessToken();
-  if (!token) {
-    throw new Error('No se pudo obtener accessToken desde GMAIL_REFRESH_TOKEN');
+  try {
+    const { token } = await oauth2Client.getAccessToken();
+    if (!token) {
+      throw new Error('No se pudo obtener accessToken desde GMAIL_REFRESH_TOKEN');
+    }
+    return token;
+  } catch (err) {
+    const msg = err?.message || String(err);
+    throw new Error(
+      `OAuth Gmail falló (revisa refresh_token y scope gmail.send): ${msg}`
+    );
   }
-  return token;
 }
 
 async function crearTransporter() {

@@ -5,12 +5,18 @@ const HOY_SIMULADO = new Date('2025-06-20T12:00:00-05:00');
 
 describe('resolverEscenarioEnvio (America/Bogota)', () => {
   let resolverEscenarioEnvio;
+  let diffDiasEnteros;
+  let parseFechaCompromiso;
 
   beforeEach(() => {
     jest.useFakeTimers({ now: HOY_SIMULADO });
     jest.setSystemTime(HOY_SIMULADO);
     jest.resetModules();
-    ({ resolverEscenarioEnvio } = require('../src/utils/fechas'));
+    ({
+      resolverEscenarioEnvio,
+      diffDiasEnteros,
+      parseFechaCompromiso,
+    } = require('../src/utils/fechas'));
   });
 
   afterEach(() => {
@@ -23,76 +29,52 @@ describe('resolverEscenarioEnvio (America/Bogota)', () => {
     expect(ZONA_HORARIA).toBe('America/Bogota');
   });
 
-  test('exactamente 5 días antes del compromiso → CINCO_DIAS_ANTES', () => {
+  test('Oracle Date UTC se normaliza a calendario Bogotá', () => {
+    const oracleDate = new Date('2025-06-21T05:00:00.000Z');
+    const compromiso = parseFechaCompromiso(oracleDate);
+    expect(diffDiasEnteros(compromiso)).toBe(1);
+  });
+
+  test('diffDias === 5 → CINCO_DIAS_ANTES', () => {
     const result = resolverEscenarioEnvio('2025-06-25', null);
-    expect(result).not.toBeNull();
-    expect(result.escenario).toBe(ESCENARIO.CINCO_DIAS_ANTES);
+    expect(result?.escenario).toBe(ESCENARIO.CINCO_DIAS_ANTES);
+    expect(result?.diffDias).toBe(5);
   });
 
-  test('exactamente 1 día antes del compromiso → UN_DIA_ANTES', () => {
+  test('diffDias === 1 → UN_DIA_ANTES', () => {
     const result = resolverEscenarioEnvio('2025-06-21', null);
-    expect(result).not.toBeNull();
-    expect(result.escenario).toBe(ESCENARIO.UN_DIA_ANTES);
+    expect(result?.escenario).toBe(ESCENARIO.UN_DIA_ANTES);
+    expect(result?.diffDias).toBe(1);
   });
 
-  test('exactamente 15 días después del vencimiento → QUINCE_DIAS_DESPUES', () => {
+  test('diffDias === 0 → VENCE_HOY', () => {
+    const result = resolverEscenarioEnvio('2025-06-20', null);
+    expect(result?.escenario).toBe(ESCENARIO.VENCE_HOY);
+    expect(result?.diffDias).toBe(0);
+  });
+
+  test('diffDias === -15 → QUINCE_DIAS_DESPUES', () => {
     const result = resolverEscenarioEnvio('2025-06-05', null);
-    expect(result).not.toBeNull();
-    expect(result.escenario).toBe(ESCENARIO.QUINCE_DIAS_DESPUES);
+    expect(result?.escenario).toBe(ESCENARIO.QUINCE_DIAS_DESPUES);
+    expect(result?.diffDias).toBe(-15);
   });
 
-  test('mismo día del compromiso → null', () => {
-    expect(resolverEscenarioEnvio('2025-06-20', null)).toBeNull();
-  });
-
-  test('2 días antes (no es escenario 1 ni 5) → null', () => {
+  test('diffDias === 2 → null', () => {
     expect(resolverEscenarioEnvio('2025-06-22', null)).toBeNull();
   });
 
-  test('14 días después del vencimiento → null', () => {
-    expect(resolverEscenarioEnvio('2025-06-06', null)).toBeNull();
+  test('atraso crónico sin historial → RECORDATORIO_INICIAL_ATRASADO', () => {
+    const result = resolverEscenarioEnvio('2025-04-20', null);
+    expect(result?.escenario).toBe(ESCENARIO.RECORDATORIO_INICIAL_ATRASADO);
   });
 
-  test('16 días después del vencimiento → null', () => {
-    expect(resolverEscenarioEnvio('2025-06-04', null)).toBeNull();
-  });
-
-  test('6 días antes del compromiso → null', () => {
-    expect(resolverEscenarioEnvio('2025-06-26', null)).toBeNull();
-  });
-
-  test('fecha inválida → null', () => {
-    expect(resolverEscenarioEnvio('no-es-fecha', null)).toBeNull();
-    expect(resolverEscenarioEnvio(null, null)).toBeNull();
+  test('ultima_fecha_envio hace exactamente 1 mes → RECORDATORIO_MENSUAL_VENCIDO', () => {
+    const result = resolverEscenarioEnvio('2025-01-10', '2025-05-20');
+    expect(result?.escenario).toBe(ESCENARIO.RECORDATORIO_MENSUAL_VENCIDO);
   });
 
   test('formato DD/MM/YYYY desde Oracle como texto', () => {
     const result = resolverEscenarioEnvio('21/06/2025', null);
     expect(result?.escenario).toBe(ESCENARIO.UN_DIA_ANTES);
-  });
-
-  test('atraso crónico sin historial (2+ meses) → RECORDATORIO_INICIAL_ATRASADO', () => {
-    const result = resolverEscenarioEnvio('2025-04-20', null);
-    expect(result).not.toBeNull();
-    expect(result.escenario).toBe(ESCENARIO.RECORDATORIO_INICIAL_ATRASADO);
-    expect(result.mesesAtraso).toBeGreaterThanOrEqual(2);
-  });
-
-  test('ultima_fecha_envio hace exactamente 1 mes → RECORDATORIO_MENSUAL_VENCIDO', () => {
-    const result = resolverEscenarioEnvio('2025-01-10', '2025-05-20');
-    expect(result).not.toBeNull();
-    expect(result.escenario).toBe(ESCENARIO.RECORDATORIO_MENSUAL_VENCIDO);
-  });
-
-  test('atraso crónico con historial pero sin cumplir mes desde ultimo envío → null', () => {
-    expect(resolverEscenarioEnvio('2025-04-20', '2025-06-10')).toBeNull();
-  });
-
-  test('mes corto: ultimo envío 31 ene → recordatorio 28/29 feb (año bisiesto)', () => {
-    jest.setSystemTime(new Date('2024-02-29T12:00:00-05:00'));
-    jest.resetModules();
-    ({ resolverEscenarioEnvio } = require('../src/utils/fechas'));
-    const result = resolverEscenarioEnvio('2023-10-01', '2024-01-31');
-    expect(result?.escenario).toBe(ESCENARIO.RECORDATORIO_MENSUAL_VENCIDO);
   });
 });

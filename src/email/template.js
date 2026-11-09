@@ -39,6 +39,12 @@ function mensajesPorEscenario(escenario, fechaCompromisoTexto, opciones = {}) {
         asunto: (numEvento) => `¡Urgente! Tarea vence mañana - Evento #${numEvento}`,
         cuerpoIntro: '¡Atención! Mañana se vence esta tarea.',
       };
+    case ESCENARIO.VENCE_HOY:
+      return {
+        tituloEncabezado: 'Urgente: tarea vence hoy',
+        asunto: (numEvento) => `¡Urgente! Tarea vence HOY - Evento #${numEvento}`,
+        cuerpoIntro: `¡Atención! Hoy se vence esta tarea (Fecha de compromiso: ${fechaCompromisoTexto}).`,
+      };
     case ESCENARIO.QUINCE_DIAS_DESPUES:
       return {
         tituloEncabezado: 'Alerta: tarea vencida hace 15 días',

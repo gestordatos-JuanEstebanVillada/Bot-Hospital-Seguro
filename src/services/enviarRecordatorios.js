@@ -8,7 +8,9 @@ const { getPool } = require('../db/oraclePool');
 const { registrarEnvioExitoso } = require('./historialCorreos');
 const {
   resolverEscenarioEnvio,
+  resolverEscenarioForzado,
   parseFechaCompromiso,
+  diffDiasEnteros,
   hoyInicioDia,
   ZONA_HORARIA,
   ESCENARIO,
@@ -17,6 +19,7 @@ const {
 const ESCENARIOS_PRUEBA = [
   ESCENARIO.CINCO_DIAS_ANTES,
   ESCENARIO.UN_DIA_ANTES,
+  ESCENARIO.VENCE_HOY,
   ESCENARIO.QUINCE_DIAS_DESPUES,
 ];
 
@@ -84,15 +87,15 @@ async function guardarHistorial(connection, fila, destino, escenario, messageId,
 }
 
 /**
- * @param {{ modoPrueba?: boolean, soloPrimeraFila?: boolean }} [opciones]
+ * @param {{ modoPrueba?: boolean, soloPrimeraFila?: boolean, forzarEscenario?: boolean }} [opciones]
  */
 async function enviarRecordatoriosTareasPlaneadas(opciones = {}) {
-  const { modoPrueba = false, soloPrimeraFila = false } = opciones;
+  const { modoPrueba = false, soloPrimeraFila = false, forzarEscenario = false } = opciones;
   let connection;
 
   try {
     const hoy = hoyInicioDia().format('YYYY-MM-DD');
-    const etiquetaModo = modoPrueba ? ' [MODO PRUEBA]' : '';
+    const etiquetaModo = modoPrueba ? ' [MODO PRUEBA]' : forzarEscenario ? ' [FORCE]' : '';
     console.log(
       `[bot] Iniciando consulta de tareas planeadas${etiquetaModo} (fecha local ${ZONA_HORARIA}: ${hoy})...`
     );
@@ -123,116 +126,136 @@ async function enviarRecordatoriosTareasPlaneadas(opciones = {}) {
     let omitidosPorFecha = 0;
     let omitidosFechaInvalida = 0;
     let filasPruebaProcesadas = 0;
+    let erroresFila = 0;
 
     for (const fila of filas) {
-      const usuarioRaw = obtenerCampo(fila, 'USUARIO', 'usuario');
-      const usuarioKey = normalizarUsuario(usuarioRaw);
-      const destinoMapeado = correosUsuarios[usuarioKey];
-
-      let destino;
       try {
-        destino = resolverDestino({ modoPrueba, destinoMapeado });
-      } catch (err) {
-        console.error('[bot]', err.message);
-        throw err;
-      }
+        const usuarioRaw = obtenerCampo(fila, 'USUARIO', 'usuario');
+        const usuarioKey = normalizarUsuario(usuarioRaw);
+        const destinoMapeado = correosUsuarios[usuarioKey];
 
-      if (!modoPrueba && !destino) {
-        omitidosSinCorreo += 1;
-        console.log(
-          `[bot] Sin correo configurado para usuario "${usuarioRaw ?? '(vacío)'}". Registro omitido.`
-        );
-        continue;
-      }
-
-      if (modoPrueba) {
-        if (soloPrimeraFila && filasPruebaProcesadas >= 1) {
-          break;
+        let destino;
+        try {
+          destino = resolverDestino({ modoPrueba, destinoMapeado });
+        } catch (err) {
+          console.error('[bot]', err.message);
+          throw err;
         }
 
-        for (const escenario of ESCENARIOS_PRUEBA) {
-          try {
-            const { numEvento, info } = await enviarUnCorreo(
-              transporter,
-              remitente,
-              destino,
-              fila,
-              escenario,
-              true
-            );
-            await guardarHistorial(connection, fila, destino, escenario, info.messageId, true);
-            enviados += 1;
-            console.log(
-              `[bot] [PRUEBA] Correo enviado (${escenario}) a ${destino} (usuario BD: ${usuarioKey || 'N/A'}, evento #${numEvento}, messageId: ${info.messageId})`
-            );
-          } catch (errEnvio) {
-            const numEvento = obtenerCampo(fila, 'NUM_EVENTO', 'num_evento');
-            console.error(
-              `[bot] [PRUEBA] Error al enviar a ${destino} (evento #${numEvento}, ${escenario}):`,
-              errEnvio.message
-            );
+        if (!modoPrueba && !destino) {
+          omitidosSinCorreo += 1;
+          console.log(
+            `[bot] Sin correo configurado para usuario "${usuarioRaw ?? '(vacío)'}". Registro omitido.`
+          );
+          continue;
+        }
+
+        if (modoPrueba) {
+          if (soloPrimeraFila && filasPruebaProcesadas >= 1) {
+            break;
           }
+
+          for (const escenario of ESCENARIOS_PRUEBA) {
+            try {
+              const { numEvento, info } = await enviarUnCorreo(
+                transporter,
+                remitente,
+                destino,
+                fila,
+                escenario,
+                true
+              );
+              await guardarHistorial(connection, fila, destino, escenario, info.messageId, true);
+              enviados += 1;
+              console.log(
+                `[bot] [PRUEBA] Correo enviado (${escenario}) a ${destino} (usuario BD: ${usuarioKey || 'N/A'}, evento #${numEvento}, messageId: ${info.messageId})`
+              );
+            } catch (errEnvio) {
+              const numEvento = obtenerCampo(fila, 'NUM_EVENTO', 'num_evento');
+              console.error(
+                `[bot] [PRUEBA] Error al enviar a ${destino} (evento #${numEvento}, ${escenario}):`,
+                errEnvio.message
+              );
+            }
+          }
+
+          filasPruebaProcesadas += 1;
+          continue;
         }
 
-        filasPruebaProcesadas += 1;
-        continue;
-      }
-
-      const fechaCompromisoRaw = obtenerCampo(fila, 'FECHA_COMPROMISO', 'fecha_compromiso');
-      if (fechaCompromisoRaw == null) {
-        omitidosFechaInvalida += 1;
-        console.log('[bot] Registro sin fecha_compromiso; omitido.');
-        continue;
-      }
-
-      const ultimaFechaEnvioRaw = obtenerCampo(
-        fila,
-        'ULTIMA_FECHA_ENVIO',
-        'ultima_fecha_envio'
-      );
-      const resolucion = resolverEscenarioEnvio(fechaCompromisoRaw, ultimaFechaEnvioRaw);
-
-      if (!resolucion) {
-        if (!parseFechaCompromiso(fechaCompromisoRaw)) {
+        const fechaCompromisoRaw = obtenerCampo(fila, 'FECHA_COMPROMISO', 'fecha_compromiso');
+        if (fechaCompromisoRaw == null) {
           omitidosFechaInvalida += 1;
-          console.log('[bot] fecha_compromiso no parseable; omitido.');
-        } else {
-          omitidosPorFecha += 1;
+          console.log('[bot] Registro sin fecha_compromiso; omitido.');
+          continue;
         }
-        continue;
-      }
 
-      const { escenario } = resolucion;
-      const opcionesEscenario = opcionesPlantillaDesdeResolucion(resolucion);
+        const ultimaFechaEnvioRaw = obtenerCampo(
+          fila,
+          'ULTIMA_FECHA_ENVIO',
+          'ultima_fecha_envio'
+        );
 
-      try {
-        const { numEvento, info } = await enviarUnCorreo(
-          transporter,
-          remitente,
-          destino,
-          fila,
-          escenario,
-          false,
-          opcionesEscenario
-        );
-        await guardarHistorial(
-          connection,
-          fila,
-          destino,
-          escenarioParaHistorial(resolucion),
-          info.messageId,
-          false
-        );
-        enviados += 1;
-        console.log(
-          `[bot] Correo enviado (${escenario}) a ${destino} (usuario: ${usuarioKey}, evento #${numEvento}, messageId: ${info.messageId})`
-        );
-      } catch (errEnvio) {
-        const numEvento = obtenerCampo(fila, 'NUM_EVENTO', 'num_evento');
+        const resolucion = forzarEscenario
+          ? resolverEscenarioForzado(fechaCompromisoRaw, ultimaFechaEnvioRaw)
+          : resolverEscenarioEnvio(fechaCompromisoRaw, ultimaFechaEnvioRaw);
+
+        if (!resolucion) {
+          if (!parseFechaCompromiso(fechaCompromisoRaw)) {
+            omitidosFechaInvalida += 1;
+            console.log('[bot] fecha_compromiso no parseable; omitido.');
+          } else {
+            omitidosPorFecha += 1;
+            if (omitidosPorFecha <= 8) {
+              const compromiso = parseFechaCompromiso(fechaCompromisoRaw);
+              const diff = compromiso ? diffDiasEnteros(compromiso) : '?';
+              console.log(
+                `[bot] Sin escenario para HOY (usuario: ${usuarioKey}, evento: ${obtenerCampo(fila, 'NUM_EVENTO', 'num_evento')}, compromiso: ${fechaCompromisoRaw}, diffDias: ${diff}, ultimo_envio: ${ultimaFechaEnvioRaw ?? 'nunca'})`
+              );
+            }
+          }
+          continue;
+        }
+
+        const { escenario } = resolucion;
+        const opcionesEscenario = opcionesPlantillaDesdeResolucion(resolucion);
+
+        try {
+          const { numEvento, info } = await enviarUnCorreo(
+            transporter,
+            remitente,
+            destino,
+            fila,
+            escenario,
+            false,
+            opcionesEscenario
+          );
+          await guardarHistorial(
+            connection,
+            fila,
+            destino,
+            escenarioParaHistorial(resolucion),
+            info.messageId,
+            false
+          );
+          enviados += 1;
+          console.log(
+            `[bot] Correo enviado (${escenario}) a ${destino} (usuario: ${usuarioKey}, evento #${numEvento}, messageId: ${info.messageId})`
+          );
+        } catch (errEnvio) {
+          const numEvento = obtenerCampo(fila, 'NUM_EVENTO', 'num_evento');
+          console.error(
+            `[bot] Error al enviar correo a ${destino} (evento #${numEvento}, ${escenario}):`,
+            errEnvio.message
+          );
+        }
+      } catch (errFila) {
+        erroresFila += 1;
         console.error(
-          `[bot] Error al enviar correo a ${destino} (evento #${numEvento}, ${escenario}):`,
-          errEnvio.message
+          `[bot] Error procesando fila (evento: ${obtenerCampo(fila, 'NUM_EVENTO', 'num_evento')}):`,
+          errFila.message
         );
+        if (errFila.stack) console.error(errFila.stack);
       }
     }
 
@@ -242,8 +265,13 @@ async function enviarRecordatoriosTareasPlaneadas(opciones = {}) {
       );
     } else {
       console.log(
-        `[bot] Proceso finalizado. Enviados: ${enviados}, omitidos por fecha/escenario: ${omitidosPorFecha}, sin correo: ${omitidosSinCorreo}, fecha inválida: ${omitidosFechaInvalida}.`
+        `[bot] Proceso finalizado. Enviados: ${enviados}, omitidos por fecha/escenario: ${omitidosPorFecha}, sin correo: ${omitidosSinCorreo}, fecha inválida: ${omitidosFechaInvalida}, errores fila: ${erroresFila}.`
       );
+      if (enviados === 0) {
+        console.log(
+          '[bot] Cero envíos: (1) correosUsuarios.js, (2) reglas de día—npm run diagnostico, (3) prueba Gmail: npm run test-emails:una-fila, (4) forzar: npm run run-once -- --force'
+        );
+      }
     }
   } catch (error) {
     console.error('[bot] Error en el proceso de recordatorios:', error);

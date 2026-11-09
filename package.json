@@ -6,9 +6,13 @@
   "scripts": {
     "start": "node src/index.js",
     "run-once": "node src/index.js --once",
+    "run-force": "node src/index.js --once --force",
+    "11": "node src/index.js --once",
     "test-emails": "node src/scripts/testEnvio.js",
     "test-emails:una-fila": "node src/scripts/testEnvio.js --una-fila",
-    "test": "jest"
+    "diagnostico": "node src/scripts/diagnostico.js",
+    "test": "jest",
+    "test:unit": "jest"
   },
   "engines": {
     "node": ">=18"
