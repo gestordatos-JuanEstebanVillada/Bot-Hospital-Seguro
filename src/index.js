@@ -17,7 +17,7 @@ async function ejecutarJob() {
   const inicio = new Date().toISOString();
   const opts = opcionesDesdeArgv();
   if (opts.forzarEscenario) {
-    console.log('[bot] Modo --force: se enviarán correos aunque hoy no cumpla la regla de calendario.');
+    console.log('[bot] Modo --force: mismas reglas (solo diffDias 5, 1, 0).');
   }
   console.log(`[bot] Ejecución programada iniciada: ${inicio}`);
   try {

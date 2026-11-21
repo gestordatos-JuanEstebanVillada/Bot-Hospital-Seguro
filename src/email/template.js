@@ -18,13 +18,7 @@ function escaparHtml(texto) {
     .replace(/"/g, '&quot;');
 }
 
-function textoMeses(meses) {
-  const n = Number(meses);
-  if (n === 1) return '1 mes';
-  return `${n} meses`;
-}
-
-function mensajesPorEscenario(escenario, fechaCompromisoTexto, opciones = {}) {
+function mensajesPorEscenario(escenario, fechaCompromisoTexto) {
   switch (escenario) {
     case ESCENARIO.CINCO_DIAS_ANTES:
       return {
@@ -43,41 +37,19 @@ function mensajesPorEscenario(escenario, fechaCompromisoTexto, opciones = {}) {
       return {
         tituloEncabezado: 'Urgente: tarea vence hoy',
         asunto: (numEvento) => `¡Urgente! Tarea vence HOY - Evento #${numEvento}`,
-        cuerpoIntro: `¡Atención! Hoy se vence esta tarea (Fecha de compromiso: ${fechaCompromisoTexto}).`,
-      };
-    case ESCENARIO.QUINCE_DIAS_DESPUES:
-      return {
-        tituloEncabezado: 'Alerta: tarea vencida hace 15 días',
-        asunto: (numEvento) =>
-          `¡Alerta! Tarea vencida hace 15 días - Evento #${numEvento}`,
-        cuerpoIntro: `Recuerda que la tarea venció hace 15 días (Fecha de compromiso original: ${fechaCompromisoTexto}).`,
-      };
-    case ESCENARIO.RECORDATORIO_INICIAL_ATRASADO: {
-      const mesesTexto = textoMeses(opciones.mesesAtraso ?? 2);
-      return {
-        tituloEncabezado: 'Aviso urgente: atraso acumulado crítico',
-        asunto: (numEvento) =>
-          `¡Aviso Urgente! Tarea con atraso acumulado crítico - Evento #${numEvento}`,
-        cuerpoIntro: `Atención: Esta tarea lleva más de ${mesesTexto} vencida sin recordatorios previos. (Fecha de compromiso original: ${fechaCompromisoTexto}). Por favor gestionar de inmediato.`,
-      };
-    }
-    case ESCENARIO.RECORDATORIO_MENSUAL_VENCIDO:
-      return {
-        tituloEncabezado: 'Recordatorio mensual: tarea sin gestionar',
-        asunto: (numEvento) =>
-          `Recordatorio Mensual: Tarea aún sin gestionar - Evento #${numEvento}`,
-        cuerpoIntro: `Recordatorio mensual: la tarea sigue en estado planeado y pendiente de gestión. (Fecha de compromiso original: ${fechaCompromisoTexto}). Por favor actualizar o cerrar la tarea.`,
+        cuerpoIntro:
+          '¡Atención! Hoy es la fecha de compromiso para esta tarea. Por favor gestionar antes del cierre del día.',
       };
     default:
       throw new Error(`Escenario de correo no reconocido: ${escenario}`);
   }
 }
 
-function buildAsunto(numEvento, escenario, opciones = {}) {
-  return mensajesPorEscenario(escenario, '', opciones).asunto(numEvento);
+function buildAsunto(numEvento, escenario) {
+  return mensajesPorEscenario(escenario, '').asunto(numEvento);
 }
 
-function buildHtmlCorreo(fila, escenario, opciones = {}) {
+function buildHtmlCorreo(fila, escenario) {
   const estadoTexto = etiquetaEstado(fila.ESTADO ?? fila.estado);
   const numEvento = fila.NUM_EVENTO ?? fila.num_evento;
   const rosa = COLOR_ROSADO_LIGA;
@@ -85,8 +57,7 @@ function buildHtmlCorreo(fila, escenario, opciones = {}) {
   const fechaCompromisoTexto = formatearFecha(fechaCompromisoRaw);
   const { tituloEncabezado, cuerpoIntro } = mensajesPorEscenario(
     escenario,
-    fechaCompromisoTexto,
-    opciones
+    fechaCompromisoTexto
   );
 
   return `<!DOCTYPE html>

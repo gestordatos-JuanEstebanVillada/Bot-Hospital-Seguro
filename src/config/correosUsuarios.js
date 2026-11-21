@@ -13,3 +13,14 @@ const correosUsuarios = {
 };
 
 module.exports = { correosUsuarios };
+
+
+
+//select * from hsevepla where eveplasec = '3159'
+
+
+//UPDATE hsevepla 
+// SET eveplafec = TO_DATE('12/11/26', 'DD/MM/YYYY') 
+//WHERE eveplasec = '3159';
+
+//COMMIT;

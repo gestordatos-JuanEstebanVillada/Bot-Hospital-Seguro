@@ -12,7 +12,7 @@ async function main() {
   try {
     const destinoSeguro = obtenerDestinoModoPrueba();
     console.log('[bot] ========== MODO PRUEBA DE ENVÍO (SEGURO) ==========');
-    console.log('[bot] Reglas de fecha: DESACTIVADAS (3 plantillas por fila).');
+    console.log('[bot] Reglas de fecha: DESACTIVADAS. 3 plantillas: 5d antes, mañana, vence hoy.');
     console.log(`[bot] Destino OBLIGATORIO (CORREO_PRUEBA): ${destinoSeguro}`);
     console.log('[bot] correosUsuarios: IGNORADO para el campo "to".');
     if (soloPrimeraFila) {

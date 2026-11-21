@@ -7,9 +7,6 @@ function etiquetaEscenario(codigo) {
     CINCO_DIAS_ANTES: '5 días antes',
     UN_DIA_ANTES: 'Vence mañana',
     VENCE_HOY: 'Vence hoy',
-    QUINCE_DIAS_DESPUES: '15 días vencida',
-    RECORDATORIO_INICIAL_ATRASADO: 'Inicial atraso crítico',
-    RECORDATORIO_MENSUAL_VENCIDO: 'Recordatorio mensual',
   };
   return map[String(codigo)] ?? String(codigo);
 }

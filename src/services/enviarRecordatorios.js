@@ -20,7 +20,6 @@ const ESCENARIOS_PRUEBA = [
   ESCENARIO.CINCO_DIAS_ANTES,
   ESCENARIO.UN_DIA_ANTES,
   ESCENARIO.VENCE_HOY,
-  ESCENARIO.QUINCE_DIAS_DESPUES,
 ];
 
 function normalizarUsuario(usuario) {
@@ -35,30 +34,11 @@ function obtenerCampo(fila, ...claves) {
   return undefined;
 }
 
-function escenarioParaHistorial(resolucion) {
-  return resolucion.escenario;
-}
-
-function opcionesPlantillaDesdeResolucion(resolucion) {
-  if (resolucion.mesesAtraso != null) {
-    return { mesesAtraso: resolucion.mesesAtraso };
-  }
-  return {};
-}
-
-async function enviarUnCorreo(
-  transporter,
-  remitente,
-  destino,
-  fila,
-  escenario,
-  modoPrueba,
-  opcionesEscenario = {}
-) {
+async function enviarUnCorreo(transporter, remitente, destino, fila, escenario, modoPrueba) {
   const numEvento = obtenerCampo(fila, 'NUM_EVENTO', 'num_evento');
   const prefijo = modoPrueba ? '[PRUEBA] ' : '';
-  const asunto = prefijo + buildAsunto(numEvento, escenario, opcionesEscenario);
-  const html = buildHtmlCorreo(fila, escenario, opcionesEscenario);
+  const asunto = prefijo + buildAsunto(numEvento, escenario);
+  const html = buildHtmlCorreo(fila, escenario);
 
   const info = await transporter.sendMail({
     from: remitente,
@@ -103,6 +83,7 @@ async function enviarRecordatoriosTareasPlaneadas(opciones = {}) {
     if (modoPrueba) {
       const destinoSeguro = resolverDestino({ modoPrueba: true, destinoMapeado: null });
       console.log(`[bot] [PRUEBA] Todos los envíos irán únicamente a: ${destinoSeguro}`);
+      console.log('[bot] [PRUEBA] Plantillas: 5 días antes, mañana, vence hoy.');
     }
 
     oracledb.outFormat = oracledb.OUT_FORMAT_OBJECT;
@@ -186,19 +167,13 @@ async function enviarRecordatoriosTareasPlaneadas(opciones = {}) {
         const fechaCompromisoRaw = obtenerCampo(fila, 'FECHA_COMPROMISO', 'fecha_compromiso');
         if (fechaCompromisoRaw == null) {
           omitidosFechaInvalida += 1;
-          console.log('[bot] Registro sin fecha_compromiso; omitido.');
+          console.log('[bot] Registro sin fecha_compromiso (eveplafec); omitido.');
           continue;
         }
 
-        const ultimaFechaEnvioRaw = obtenerCampo(
-          fila,
-          'ULTIMA_FECHA_ENVIO',
-          'ultima_fecha_envio'
-        );
-
         const resolucion = forzarEscenario
-          ? resolverEscenarioForzado(fechaCompromisoRaw, ultimaFechaEnvioRaw)
-          : resolverEscenarioEnvio(fechaCompromisoRaw, ultimaFechaEnvioRaw);
+          ? resolverEscenarioForzado(fechaCompromisoRaw)
+          : resolverEscenarioEnvio(fechaCompromisoRaw);
 
         if (!resolucion) {
           if (!parseFechaCompromiso(fechaCompromisoRaw)) {
@@ -210,7 +185,7 @@ async function enviarRecordatoriosTareasPlaneadas(opciones = {}) {
               const compromiso = parseFechaCompromiso(fechaCompromisoRaw);
               const diff = compromiso ? diffDiasEnteros(compromiso) : '?';
               console.log(
-                `[bot] Sin escenario para HOY (usuario: ${usuarioKey}, evento: ${obtenerCampo(fila, 'NUM_EVENTO', 'num_evento')}, compromiso: ${fechaCompromisoRaw}, diffDias: ${diff}, ultimo_envio: ${ultimaFechaEnvioRaw ?? 'nunca'})`
+                `[bot] Sin escenario para HOY (usuario: ${usuarioKey}, evento: ${obtenerCampo(fila, 'NUM_EVENTO', 'num_evento')}, fecha_compromiso: ${fechaCompromisoRaw}, diffDias: ${diff})`
               );
             }
           }
@@ -218,7 +193,6 @@ async function enviarRecordatoriosTareasPlaneadas(opciones = {}) {
         }
 
         const { escenario } = resolucion;
-        const opcionesEscenario = opcionesPlantillaDesdeResolucion(resolucion);
 
         try {
           const { numEvento, info } = await enviarUnCorreo(
@@ -227,17 +201,9 @@ async function enviarRecordatoriosTareasPlaneadas(opciones = {}) {
             destino,
             fila,
             escenario,
-            false,
-            opcionesEscenario
-          );
-          await guardarHistorial(
-            connection,
-            fila,
-            destino,
-            escenarioParaHistorial(resolucion),
-            info.messageId,
             false
           );
+          await guardarHistorial(connection, fila, destino, escenario, info.messageId, false);
           enviados += 1;
           console.log(
             `[bot] Correo enviado (${escenario}) a ${destino} (usuario: ${usuarioKey}, evento #${numEvento}, messageId: ${info.messageId})`
@@ -269,7 +235,7 @@ async function enviarRecordatoriosTareasPlaneadas(opciones = {}) {
       );
       if (enviados === 0) {
         console.log(
-          '[bot] Cero envíos: (1) correosUsuarios.js, (2) reglas de día—npm run diagnostico, (3) prueba Gmail: npm run test-emails:una-fila, (4) forzar: npm run run-once -- --force'
+          '[bot] Cero envíos: solo se notifica con diffDias 5, 1 o 0. Ver npm run diagnostico y correosUsuarios.js.'
         );
       }
     }

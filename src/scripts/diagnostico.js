@@ -55,8 +55,7 @@ async function checkOracleYMuestra() {
       const usuario = (fila.USUARIO ?? fila.usuario ?? '').toString().trim().toLowerCase();
       const tieneMapa = Boolean(correosUsuarios[usuario]);
       const fc = fila.FECHA_COMPROMISO ?? fila.fecha_compromiso;
-      const ult = fila.ULTIMA_FECHA_ENVIO ?? fila.ultima_fecha_envio;
-      const res = resolverEscenarioEnvio(fc, ult);
+      const res = resolverEscenarioEnvio(fc);
       if (tieneMapa) conCorreo += 1;
       if (tieneMapa && res) conEscenarioHoy += 1;
       console.log(
@@ -68,10 +67,7 @@ async function checkOracleYMuestra() {
       const usuario = (fila.USUARIO ?? fila.usuario ?? '').toString().trim().toLowerCase();
       if (correosUsuarios[usuario]) {
         conCorreo += 1;
-        const res = resolverEscenarioEnvio(
-          fila.FECHA_COMPROMISO ?? fila.fecha_compromiso,
-          fila.ULTIMA_FECHA_ENVIO ?? fila.ultima_fecha_envio
-        );
+        const res = resolverEscenarioEnvio(fila.FECHA_COMPROMISO ?? fila.fecha_compromiso);
         if (res) conEscenarioHoy += 1;
       }
     }
